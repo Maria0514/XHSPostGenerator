@@ -1,0 +1,32 @@
+name: Update Prompt JSON
+
+permissions:
+  contents: write
+
+on:
+  schedule:
+    - cron: '0 14 * * 6'  # 每周六晚上22:00 (UTC+8)
+
+jobs:
+  update_prompt_json:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0 # 检出完整的提交历史
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.9
+
+    - name: Check Prompt Format
+      run: python .ci/check_prompt_format.py
+    - name: Convert Prompt to JSON
+      run: python .ci/prompt_to_json_for_CI.py
+    - name: Build All Prompt
+      run: python .ci/build_all_yiyan_prompt.py
+      run: python .ci/build_all_gpt_prompt.py
+      run: python .ci/build_all_aigame_prompt.py
