@@ -12,9 +12,11 @@ class ZhipuLLM(LLM):
     """A custom chat model for ZhipuAI."""
 
     client: Any = None
+    model_name: str = "glm-4-flash"
 
-    def __init__(self):
+    def __init__(self, model="glm-4-flash"):
         super().__init__()
+        self.model_name = model if model is not None else "glm-4-flash"
         print("Initializing model...")
         self.client = ZhipuAI(api_key=os.environ.get("ZHIPUAI_API_KEY"))
         print("Model initialization complete")
@@ -29,7 +31,7 @@ class ZhipuLLM(LLM):
         """Run the LLM on the given input."""
 
         response = self.client.chat.completions.create(
-            model="glm-4-flash",
+            model=self.model_name,
             messages=[
                 {"role": "user", "content": prompt},
             ],
@@ -55,9 +57,10 @@ class SiliconFlowLLM(LLM):
     token: Optional[str] = None
     client: Any = None
 
-    def __init__(self):
+    def __init__(self, model: str):
         super().__init__()
-        print("Initializing model...")
+        print("Initializing model..." + model)
+        self.model_name = model
         from openai import OpenAI
         self.token = os.getenv("OPENAI_API_KEY")
         if not self.token:
@@ -79,7 +82,7 @@ class SiliconFlowLLM(LLM):
         response = self.client.chat.completions.create(
             model=self.model_name,
             messages=[
-                {"role": "system", "content": "你是 SocialAI 组织开发的人情世故大师，叫做天机，你将解答用户有关人情世故的问题。"},
+                {"role": "system", "content": "你是小红书文案生成大师，你将负责替用户创作出精彩且有吸引力的文案。"},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=4096,

@@ -22,3 +22,5 @@ metagpt/*
 test/agents/metagpt/metagpt/*
 config/*
 test/*
+# Python 虚拟环境
+.venv/
