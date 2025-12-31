@@ -9,7 +9,6 @@ logs/
 # 中间产物
 build/*
 tianji.egg-info/*
-temp/*
 temp_datasets/*
 *.bin
 *.pyc
