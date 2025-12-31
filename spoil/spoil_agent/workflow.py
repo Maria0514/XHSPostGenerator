@@ -4,9 +4,11 @@ from typing import Any, Dict
 from langgraph.graph import END, StateGraph
 from .nodes import *
 from .spoilState import SpoilState
+from spoil.knowledges.langchain_onlinellm.models import SiliconFlowEmbeddings, SiliconFlowLLM, ZhipuLLM
 
 
-def build_xhs_workflow(llm: Any, retrievers: Dict[str, Any], tavily_client: Any = None):
+
+def build_xhs_workflow(retrievers: Dict[str, Any], tavily_client: Any = None):
     """
     构建小红书文案生成工作流
     
@@ -19,16 +21,24 @@ def build_xhs_workflow(llm: Any, retrievers: Dict[str, Any], tavily_client: Any 
         编译后的 LangGraph 工作流
     """
     workflow = StateGraph(SpoilState)
-    
+
+    # 不同节点模型配置
+    intent_llm = SiliconFlowLLM(model='deepseek-ai/DeepSeek-R1-Distill-Qwen-14B')
+    refine_llm = SiliconFlowLLM(model='deepseek-ai/DeepSeek-V3.2')
+    question_llm = SiliconFlowLLM(model='deepseek-ai/DeepSeek-V3.2')
+    extend_query_llm = SiliconFlowLLM(model='deepseek-ai/DeepSeek-V3.2')
+    fillter_web_llm = SiliconFlowLLM(model='deepseek-ai/DeepSeek-V3.2')
+    answer_llm = SiliconFlowLLM(model='deepseek-ai/DeepSeek-V3.2') # todo:使用微调模型
+
     # 添加节点
-    workflow.add_node("intent", lambda state: intent_node(state, llm))
-    workflow.add_node("refine", lambda state: refine_node(state, llm))
+    workflow.add_node("intent", lambda state: intent_node(state, intent_llm))
+    workflow.add_node("refine", lambda state: refine_node(state, refine_llm))
     workflow.add_node("rag", lambda state: rag_node(state, retrievers))
-    workflow.add_node("question", lambda state: question_node(state, llm))
-    workflow.add_node("extend_query", lambda state: extend_query_node(state, llm))
+    workflow.add_node("question", lambda state: question_node(state, question_llm))
+    workflow.add_node("extend_query", lambda state: extend_query_node(state, extend_query_llm))
     workflow.add_node("search", lambda state: search_node(state, tavily_client))
-    workflow.add_node("fillter_web", lambda state: fillter_web_node(state, llm))
-    workflow.add_node("answer", lambda state: answer_node(state, llm))
+    workflow.add_node("fillter_web", lambda state: fillter_web_node(state, fillter_web_llm))
+    workflow.add_node("answer", lambda state: answer_node(state, answer_llm))
 
     
     # 设置入口点

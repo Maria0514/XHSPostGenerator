@@ -4,6 +4,10 @@ Streamlit + LangGraph 版本的小红书文案生成器（重构版）
 """
 
 import os
+
+# 禁用 ChromaDB 遥测功能，避免 telemetry 报错
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+
 from typing import Any, Dict
 import streamlit as st
 from streamlit_chat import message
@@ -25,10 +29,6 @@ load_dotenv()
 
 
 # --------------- 初始化资源 ---------------
-def get_llm(model: str = "Qwen/Qwen2.5-7B-Instruct"):
-    """获取 LLM 实例"""
-    return SiliconFlowLLM(model)
-
 
 @st.cache_resource(show_spinner=False)
 def get_embeddings():
@@ -96,16 +96,19 @@ def build_retrievers(chunk_size: int = 896, force: bool = False):
 
 # 初始化全局资源
 RAG_RETRIEVERS = build_retrievers()
-LLM = get_llm()
 TAVILY_KEY = os.getenv("TAVILY_API_KEY", "")
 TAVILY_CLIENT = TavilyClient(api_key=TAVILY_KEY) if TAVILY_KEY else None
 
-# 构建工作流
-APP = build_xhs_workflow(LLM, RAG_RETRIEVERS, TAVILY_CLIENT)
+@st.cache_resource(show_spinner=False)
+def get_app():
+    """构建并缓存工作流"""
+    return build_xhs_workflow(RAG_RETRIEVERS, TAVILY_CLIENT)
+
+APP = get_app()
 
 
 # --------------- Streamlit UI ---------------
-st.set_page_config(page_title="小红书文案生成器", page_icon="✨")
+st.set_page_config(page_title="小红书文案生成器", page_icon="💅🏼")
 
 # 初始化 session state
 if "chat_history" not in st.session_state:

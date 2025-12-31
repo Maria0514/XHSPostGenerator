@@ -1,21 +1,12 @@
 """网络搜索 Node"""
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, TypedDict
+from ..spoilState import SpoilState
 
 
-class TianjiState(TypedDict):
-    user_input: str
-    chat_history: List[Dict[str, str]]
-    scene_label: str
-    scene_attributes: Dict[str, str]
-    retrieved_docs: List[str]
-    search_enabled: bool
-    search_results: Dict[str, Any]
-    final_answer: str
-    need_more_info: bool
 
-
-def _generate_queries(state: TianjiState) -> List[str]:
+def _generate_queries(state: SpoilState) -> List[str]:
     """生成搜索查询"""
     attrs = state.get("scene_attributes", {})
     base = state.get("user_input", "")
@@ -31,9 +22,18 @@ def _generate_queries(state: TianjiState) -> List[str]:
     return queries
 
 
-def search_node(state: TianjiState, tavily_client: Any):
+def _search_query(tavily_client: Any, query: str) -> Dict[str, Any]:
+    """执行单个搜索查询"""
+    try:
+        resp = tavily_client.search(query, max_results=5)
+        return resp.get("results", [])
+    except Exception:
+        return []
+
+
+def search_node(state: SpoilState, tavily_client: Any):
     """
-    网络搜索节点：使用 Tavily 搜索实时信息
+    网络搜索节点：使用 Tavily 并发搜索实时信息
     
     Args:
         state: 工作流状态
@@ -46,13 +46,26 @@ def search_node(state: TianjiState, tavily_client: Any):
         return {"search_results": {}}
     
     queries = state.get("search_queries") or _generate_queries(state)
+    if not queries:
+        return {"search_results": {}}
+    
     results: Dict[str, Any] = {}
     
-    for idx, q in enumerate(queries):
-        try:
-            resp = tavily_client.search(q, max_results=5)
-            results[str(idx)] = resp.get("results", [])
-        except Exception:
-            results[str(idx)] = []
+    # 使用线程池并发执行搜索
+    with ThreadPoolExecutor(max_workers=min(5, len(queries))) as executor:
+        # 提交所有搜索任务
+        future_to_idx = {
+            executor.submit(_search_query, tavily_client, q): idx
+            for idx, q in enumerate(queries)
+        }
+        
+        # 处理完成的任务
+        for future in as_completed(future_to_idx):
+            idx = future_to_idx[future]
+            try:
+                search_results = future.result()
+                results[str(idx)] = search_results
+            except Exception:
+                results[str(idx)] = []
     
     return {"search_results": results}

@@ -4,7 +4,7 @@ from typing import Any, Dict, List, TypedDict
 from ..config import SCENE_JSON, SCENE_OPTIONS, SCENE_EXAMPLES
 from ..prompts import INTENT_PROMPT_TEMPLATE
 from ..spoilState import SpoilState
-
+from loguru import logger
 
 def format_history(history: List[Dict[str, str]]) -> str:
     return str(history)
@@ -36,5 +36,6 @@ def intent_node(state: SpoilState, llm: Any):
         scene_example=SCENE_EXAMPLES,
     )
     rsp = llm_invoke(prompt, llm)
+    logger.info(f"意图识别结果：{rsp}，当前对话历史: {state['chat_history']}")
     intent = rsp if isinstance(rsp, str) else getattr(rsp, "content", str(rsp))
     return {"scene_label": intent.strip()}

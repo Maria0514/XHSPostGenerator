@@ -15,7 +15,7 @@ from spoil.agents.metagpt_agents.utils.helper_func import (
     is_number_in_types,
 )
 from ..config import SCENE_JSON
-from ..prompts import REFINE_PROMPT_TEMPLATE, QUESTION_PROMPT_TEMPLATE
+from ..prompts import REFINE_PROMPT_TEMPLATE
 from ..spoilState import SpoilState
 
 
@@ -81,7 +81,7 @@ def refine_node(state: SpoilState, llm: Any):
         return {"need_more_info": True, "final_answer": rsp if isinstance(rsp, str) else getattr(rsp, "content", str(rsp))}
 
     base_attrs = ensure_scene_attributes(scene_label, state.get("scene_attributes", {}))
-    scene, _, _ = extract_single_type_attributes_and_examples(SCENE_JSON, scene_label)
+    scene, _, example = extract_single_type_attributes_and_examples(SCENE_JSON, scene_label)
     desc = extract_attribute_descriptions(SCENE_JSON, base_attrs)
 
     refine_prompt = REFINE_PROMPT_TEMPLATE.format(
@@ -100,18 +100,6 @@ def refine_node(state: SpoilState, llm: Any):
     except Exception:
         merged = base_attrs
 
-    if has_empty_values(merged):
-        question_prompt = QUESTION_PROMPT_TEMPLATE.format(
-            scene=scene,
-            scene_attributes=merged,
-            scene_attributes_description=desc,
-        )
-        question = llm_invoke(question_prompt, llm)
-        q_content = question if isinstance(question, str) else getattr(question, "content", "")
-        return {
-            "scene_attributes": merged,
-            "need_more_info": q_content.strip() != "Full",
-            "final_answer": q_content if q_content.strip() != "Full" else "",
-        }
-
-    return {"scene_attributes": merged, "need_more_info": False}
+    # 如果属性有空值，标记需要更多信息，由 question_node 专门处理
+    need_more_info = has_empty_values(merged)
+    return {"scene_attributes": merged, "need_more_info": need_more_info}

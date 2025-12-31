@@ -28,8 +28,16 @@ def llm_invoke(prompt: str, llm: Any) -> str:
 def question_node(state: SpoilState, llm: Any):
     # refine_node 可能已经生成了 final_answer（追问）。这里做兜底。
     if state.get("final_answer"):
-        # LangGraph 要求节点至少写入一个字段，否则会触发 InvalidUpdateError。
-        return {"final_answer": state.get("final_answer", ""), "need_more_info": True}
+        # 更新 chat_history，将追问添加到对话历史
+        final_answer = state.get("final_answer", "")
+        updated_history = state.get("chat_history", []) + [
+            {"role": "assistant", "content": final_answer}
+        ]
+        return {
+            "final_answer": final_answer,
+            "need_more_info": True,
+            "chat_history": updated_history
+        }
 
     scene_label = (state.get("scene_label") or "").split("：")[0].strip()
     scene, _, _ = extract_single_type_attributes_and_examples(SCENE_JSON, scene_label)
@@ -45,4 +53,13 @@ def question_node(state: SpoilState, llm: Any):
     text = rsp if isinstance(rsp, str) else getattr(rsp, "content", str(rsp))
     if text.strip() == "Full":
         return {"need_more_info": False}
-    return {"final_answer": text, "need_more_info": True}
+    
+    # 追问时也要更新 chat_history
+    updated_history = state.get("chat_history", []) + [
+        {"role": "assistant", "content": text}
+    ]
+    return {
+        "final_answer": text,
+        "need_more_info": True,
+        "chat_history": updated_history
+    }
