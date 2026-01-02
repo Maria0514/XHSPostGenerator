@@ -259,10 +259,12 @@ def fillter_web_node(state: SpoilState, llm: Any = None):
         return {"search_context": ""}
     
     # 整理成最终的 search_context
+    # 限制每个页面长度为 800 个字符
+    contents = [
+        content[:800] if len(content) > 800 else content
+        for content in contents
+    ]
     search_context = "\n\n---\n\n".join(contents)
-    
-    # 限制总长度
-    if len(search_context) > 5000:
-        search_context = search_context[:5000] + "\n\n[内容已截断...]"
+
     
     return {"search_context": search_context}

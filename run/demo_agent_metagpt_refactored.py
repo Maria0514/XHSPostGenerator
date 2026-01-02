@@ -177,6 +177,7 @@ if user_input := st.chat_input("💡 告诉我你想创作什么样的文案..."
         "search_context": "",
         "final_answer": "",
         "need_more_info": False,
+        "chat_completed": False,
     }
     
     message(user_input, is_user=True, key=f"user_{len(st.session_state['chat_history'])}")
@@ -191,6 +192,8 @@ if user_input := st.chat_input("💡 告诉我你想创作什么样的文案..."
 
     assistant_text = result.get("final_answer", "")
     if assistant_text:
+        if result.get("chat_completed") is True:
+            st.session_state["chat_completed"] = True
         st.session_state["chat_history"].append({"role": "assistant", "content": assistant_text})
         message(assistant_text, is_user=False, key=f"assistant_{len(st.session_state['chat_history'])}")
         st.rerun()

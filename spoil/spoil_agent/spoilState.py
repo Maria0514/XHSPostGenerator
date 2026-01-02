@@ -14,3 +14,5 @@ class SpoilState(TypedDict):
     search_context: str
     final_answer: str
     need_more_info: bool
+    # 标记是否已输出最终答案（用于 UI 侧控制是否开启新对话）
+    chat_completed: bool

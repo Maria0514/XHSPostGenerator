@@ -76,12 +76,4 @@ def answer_node(state: SpoilState, llm: Any):
     rsp = llm_invoke(prompt, llm)
     ans = rsp if isinstance(rsp, str) else getattr(rsp, "content", str(rsp))
     
-    # 标记对话完成（在 Streamlit 运行时）
-    if st is not None:
-        try:
-            st.session_state["chat_completed"] = True
-        except Exception:
-            # 允许在非 streamlit run 环境下被当作普通库调用
-            pass
-    
-    return {"final_answer": ans}
+    return {"final_answer": ans, "chat_completed": True}
