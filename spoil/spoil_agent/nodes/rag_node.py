@@ -84,5 +84,5 @@ def rag_node(state: SpoilState, retrievers: Dict[str, Any]):
         except Exception:
             docs = []
     
-    doc_texts = [d.page_content for d in docs][:5]
+    doc_texts = [d.page_content for d in docs][:3]
     return {"retrieved_docs": doc_texts}

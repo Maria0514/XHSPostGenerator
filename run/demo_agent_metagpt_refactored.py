@@ -4,11 +4,13 @@ Streamlit + LangGraph 版本的小红书文案生成器（重构版）
 """
 
 import os
+import json
+import re
 
 # 禁用 ChromaDB 遥测功能，避免 telemetry 报错
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
 
-from typing import Any, Dict
+from typing import Any, Dict, List
 import streamlit as st
 from streamlit_chat import message
 from dotenv import load_dotenv
@@ -17,8 +19,7 @@ from tavily import TavilyClient
 from spoil import TIANJI_PATH
 from spoil.knowledges.langchain_onlinellm.models import SiliconFlowEmbeddings, SiliconFlowLLM
 from langchain_chroma import Chroma
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import DirectoryLoader, TextLoader
+from langchain_core.documents import Document
 
 # 导入重构后的模块
 from spoil.spoil_agent import build_xhs_workflow
@@ -36,11 +37,23 @@ def get_embeddings():
     return SiliconFlowEmbeddings()
 
 
-def build_retrievers(chunk_size: int = 640, chunk_overlap: int = 120, force: bool = False):
+def build_retrievers(force: bool = False):
     """构建各场景的检索器"""
     embeddings = get_embeddings()
     retrievers: Dict[str, Any] = {}
     dest = os.path.join(TIANJI_PATH, "temp", "tianji-chinese")
+
+    def _sanitize_jsonl_line(s: str) -> str:
+        """将常见的非法控制字符转义成 JSON 可解析形式。
+
+        常见来源：把文案直接粘贴进 jsonl，里面夹了真实的 Tab(\t) 等控制字符。
+        这些字符在 JSON 字符串里必须写成转义序列（例如 \\t）。
+        """
+        # 真实制表符会导致 json.loads: Invalid control character
+        s = s.replace("\t", "")
+        # 其他不可见控制字符（0x00-0x1F，保留合法空白字符 0x09/0x0A/0x0D）统一替换为空格
+        s = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", " ", s)
+        return s
     
     if not os.path.exists(dest):
         from huggingface_hub import snapshot_download
@@ -58,6 +71,12 @@ def build_retrievers(chunk_size: int = 640, chunk_overlap: int = 120, force: boo
         data_path = os.path.join(dest, "RAG", folder)
         if not os.path.exists(data_path):
             continue
+
+        # jsonl-only：每个场景目录下固定放置 examples.jsonl
+        jsonl_path = os.path.join(data_path, "examples.jsonl")
+        if not os.path.exists(jsonl_path):
+            print(f"未找到 jsonl 语料，跳过 {data_path}（需要 {jsonl_path}）")
+            continue
         persist = os.path.join(TIANJI_PATH, "temp", f"chromadb_{folder}")
         
         if os.path.exists(persist) and not force:
@@ -66,21 +85,57 @@ def build_retrievers(chunk_size: int = 640, chunk_overlap: int = 120, force: boo
             if force and os.path.exists(persist):
                 import shutil
                 shutil.rmtree(persist)
-            
-            loader = DirectoryLoader(
-                data_path,
-                glob="*.txt",
-                loader_cls=TextLoader,
-                loader_kwargs={"encoding": "utf-8"},
-            )
-            splitter = RecursiveCharacterTextSplitter(
-                chunk_size=chunk_size, chunk_overlap=chunk_overlap
-            )
+
+            raw_docs: List[Document] = []
             try:
-                docs = splitter.split_documents(loader.load())
+                with open(jsonl_path, "r", encoding="utf-8-sig") as f:
+                    for line_no, line in enumerate(f, start=1):
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            obj = json.loads(_sanitize_jsonl_line(line))
+                        except Exception as exc:
+                            print(
+                                f"jsonl 解析失败，跳过 {jsonl_path}#L{line_no}：{type(exc).__name__}({exc})"
+                            )
+                            continue
+
+                        text = (obj.get("text") or "").strip()
+                        if not text:
+                            continue
+
+                        # Chroma metadata 需要扁平的基础类型，避免嵌套 dict/list
+                        metadata: Dict[str, Any] = {
+                            "scene_id": str(obj.get("scene_id") or scene_id),
+                            "id": str(obj.get("id") or f"{folder}-{line_no}"),
+                            "type": str(obj.get("type") or "example"),
+                            "source": jsonl_path,
+                            "line": line_no,
+                        }
+
+                        if isinstance(obj.get("scene_name"), str) and obj.get("scene_name").strip():
+                            metadata["scene_name"] = obj.get("scene_name").strip()
+
+                        attrs = obj.get("attrs")
+                        if isinstance(attrs, dict):
+                            for k, v in attrs.items():
+                                if isinstance(k, str) and isinstance(v, str) and v.strip():
+                                    metadata[f"attr_{k}"] = v.strip()
+
+                        tags = obj.get("tags")
+                        if isinstance(tags, list):
+                            tag_strs = [str(t).strip() for t in tags if str(t).strip()]
+                            if tag_strs:
+                                metadata["tags"] = "|".join(tag_strs[:20])
+
+                        raw_docs.append(Document(page_content=text, metadata=metadata))
             except Exception as exc:
-                print(f"加载知识库失败，跳过 {data_path}: {exc}")
+                print(f"加载 jsonl 语料失败，跳过 {jsonl_path}: {exc}")
                 continue
+
+            # 示例库模式：不做切分，保证召回尽量为“完整单条示例”
+            docs = raw_docs
             
             if not docs:
                 continue
@@ -92,14 +147,14 @@ def build_retrievers(chunk_size: int = 640, chunk_overlap: int = 120, force: boo
         # 使用 MMR 提升检索多样性，减少重复段落
         retrievers[scene_id] = vectordb.as_retriever(
             search_type="mmr",
-            search_kwargs={"k": 6, "fetch_k": 20},
+            search_kwargs={"k": 3, "fetch_k": 5},
         )
     
     return retrievers
 
 
 # 初始化全局资源
-RAG_RETRIEVERS = build_retrievers(force=True)
+RAG_RETRIEVERS = build_retrievers(force=False)
 TAVILY_KEY = os.getenv("TAVILY_API_KEY", "")
 TAVILY_CLIENT = TavilyClient(api_key=TAVILY_KEY) if TAVILY_KEY else None
 
